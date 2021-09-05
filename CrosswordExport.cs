@@ -34,13 +34,8 @@ namespace Crossword
                   }
                   else
                   {
-                     /*if (cell.IndexX == 0 && cell.WordX != null) { sheet.SetValue(y + 1, x + 1, cell.WordX.ReferenceIndex); }
-                     else if (cell.IndexY == 0 && cell.WordY != null) { sheet.SetValue(y + 1, x + 1, cell.WordY.ReferenceIndex); }*/
-                     string c = "";
-                     if (cell.IndexX == 0 && cell.WordX != null) { c += cell.WordX.ReferenceIndex; }
-                     else if (cell.IndexY == 0 && cell.WordY != null) { c += cell.WordY.ReferenceIndex; }
-                     c += cell.Character;
-                     sheet.SetValue(y + 1, x + 1, c);
+                     if (cell.IndexX == 0 && cell.WordX != null) { sheet.SetValue(y + 1, x + 1, cell.WordX.ReferenceIndex); }
+                     else if (cell.IndexY == 0 && cell.WordY != null) { sheet.SetValue(y + 1, x + 1, cell.WordY.ReferenceIndex); }
                      celRef.Fill.BackgroundColor.SetColor(System.Drawing.Color.White);
                      celRef.Font.Size = 8;
                      celRef.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Left;
@@ -64,6 +59,33 @@ namespace Crossword
             for (int y = Math.Max(xRow, yRow) - 1; y >= map.Y; y--) { sheet.Row(y + 1).Height = cellSize * 5; }
             sheet.Column(map.X + 3).AutoFit();
             sheet.Column(map.X + 4).AutoFit();
+
+            sheet = package.Workbook.Worksheets.Add("Solution");
+            for (int x = 0; x < map.X; x++) { sheet.Column(x + 1).Width = cellSize; }
+            for (int y = 0; y < map.Y; y++) { sheet.Row(y + 1).Height = cellSize * 5; }
+            for (int y = 0; y < map.Y; y++)
+            {
+               for (int x = 0; x < map.X; x++)
+               {
+                  var celRef = sheet.Cells[y + 1, x + 1].Style;
+                  celRef.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                  celRef.Border.BorderAround(OfficeOpenXml.Style.ExcelBorderStyle.Thin);
+                  var cell = map.Get(x, y);
+                  if (cell == null)
+                  {
+                     celRef.Fill.BackgroundColor.SetColor(System.Drawing.Color.Black);
+                  }
+                  else
+                  {
+                     sheet.SetValue(y + 1, x + 1, cell.Character.ToString());
+                     celRef.Fill.BackgroundColor.SetColor(System.Drawing.Color.White);
+                     celRef.Font.Size = 12;
+                     celRef.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Center;
+                     celRef.VerticalAlignment = OfficeOpenXml.Style.ExcelVerticalAlignment.Center;
+                  }
+               }
+            }
+
             package.Save();
             return stream.ToArray();
          }

@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Crossword
 {
-   public class CrosswordMap
+   public class CrosswordMap : IComparable<CrosswordMap>
    {
       public class Cell
       {
@@ -24,11 +25,23 @@ namespace Crossword
          }
       }
 
-      public struct Point
+      public struct Point : IComparable<Point>
       {
          public readonly int X;
          public readonly int Y;
-         public Point(int x, int y) { X = x; Y = y; }
+         public readonly int Priority;
+         public readonly int SortKey;
+
+         public Point(int x, int y, int priority, int key) { X = x; Y = y; Priority = priority; SortKey = key; }
+
+         public int CompareTo(Point other)
+         {
+            if (Priority < other.Priority) { return 1; }
+            if (Priority > other.Priority) { return -1; }
+            if (SortKey > other.SortKey) { return -1; }
+            if (SortKey < other.SortKey) { return 1; }
+            return 0;
+         }
       }
 
       private readonly List<CrosswordWord> words = new List<CrosswordWord>();
@@ -41,6 +54,9 @@ namespace Crossword
       public int X => mapX;
       public int Y => mapY;
       public IReadOnlyCollection<CrosswordWord> Words => words;
+
+      public bool AllIntersecting => allIntersect;
+      public int Intersections => intersections;
 
       public Cell Get(int x, int y)
       {
@@ -257,6 +273,38 @@ namespace Crossword
          else if (yWords.Count == 0) { if (xWords.Count > 1) { xWords[0].AxisX = false; } }
       }
 
+      private int CountIntersectionsAt(CrosswordWord word, int x, int y)
+      {
+         int count = 0;
+         if (word.AxisX)
+         {
+            if (y < 0 || y >= mapY) { return count; }
+            if (x >= mapX || (x + word.Length) <= 0) { return count; }
+            for (int i = 0, ci = y * mapX + x; i < word.Length; i++, ci++)
+            {
+               var cx = x + i;
+               if (cx >= mapX) { break; }
+               if (cx < 0) { continue; }
+               var cell = map[ci];
+               if (cell != null && cell.WordY != null && cell.Character == word.Value[i]) { count++; }
+            }
+         }
+         else
+         {
+            if (x < 0 || x >= mapX) { return count; }
+            if (y >= mapY || (y + word.Length) <= 0) { return count; }
+            for (int i = 0, ci = y * mapX + x; i < word.Length; i++, ci += mapX)
+            {
+               var cy = y + i;
+               if (cy >= mapY) { break; }
+               if (cy < 0) { continue; }
+               var cell = map[ci];
+               if (cell != null && cell.WordX != null && cell.Character == word.Value[i]) { count++; }
+            }
+         }
+         return count;
+      }
+
       private bool CanDrawAt(CrosswordWord word, int x, int y)
       {
          Cell cell;
@@ -392,6 +440,8 @@ namespace Crossword
                };
             }
          }
+         clone.allIntersect = allIntersect;
+         clone.intersections = intersections;
          return clone;
       }
 
@@ -409,12 +459,14 @@ namespace Crossword
                {
                   int x = ci % mapX, y = ci / mapX;
                   if (word.AxisX) { x -= idx; } else { y -= idx; }
-                  insertions.Add(new Point(x, y));
+                  var count = CountIntersectionsAt(word, x, y);
+                  if (count <= 0) { continue; }
+                  insertions.Add(new Point(x, y, count, rnd.Next()));
                }
             }
          }
          if (insertions.Count == 0) { return false; }
-         Shuffle(insertions, rnd);
+         insertions.Sort();
          for (int j = 0; j < insertions.Count; j++)
          {
             if (DrawAt(word, insertions[j].X, insertions[j].Y)) { return true; }
@@ -429,7 +481,7 @@ namespace Crossword
          {
             for (int x = word.AxisX ? -word.Length : 0, xm = mapX + 2; x < xm; x++)
             {
-               insertions.Add(new Point(x, y));
+               insertions.Add(new Point(x, y, 1, 1));
             }
          }
          Shuffle(insertions, rnd);
@@ -472,7 +524,20 @@ namespace Crossword
          return true;
       }
 
-      public static CrosswordMap Build(int seed, params string[] list)
+      public int CompareTo(CrosswordMap other)
+      {
+         if (other == null) { return 1; }
+         if (allIntersect && !other.allIntersect) { return 1; }
+         if (!allIntersect && other.allIntersect) { return -1; }
+         if (intersections > other.intersections) { return 1; }
+         if (intersections < other.intersections) { return -1; }
+         int area = X * Y, otherArea = other.X * other.Y;
+         if (area < otherArea) { return 1; }
+         if (area > otherArea) { return -1; }
+         return 0;
+      }
+
+      public static CrosswordMap Build(int seed, string[] list, int maxIterations = 10000, Func<CrosswordMap, bool> result = null)
       {
          var map = new CrosswordMap();
          var rnd = new Random(seed);
@@ -480,15 +545,40 @@ namespace Crossword
          if (list == null || list.Length == 0) { return map; }
          map.words.Clear();
          map.words.AddRange(list.Select(x => new CrosswordWord(x)));
-         for (int tries = 0; tries < 100000; tries++)
+         for (int tries = 0; tries < maxIterations; tries++)
          {
             if (!map.TryFill(rnd)) { continue; }
             map.Trim();
             if (!map.AssignIndices()) { continue; }
-            if (best == null ||
-               (!best.allIntersect && map.allIntersect) ||
-               (best.intersections < map.intersections) ||
-               (best.X * best.Y) > (map.X * map.Y)) { best = map.Clone(); }
+            if (map.CompareTo(best) > 0)
+            {
+               best = map.Clone(); tries = -1;
+               if (result != null && result(best)) { return best; }
+            }
+         }
+         return best;
+      }
+
+      public static async Task<CrosswordMap> BuildAsync(int seed, string[] list,
+         int maxIterationsPerThread = 10000, int threads = 4, Func<CrosswordMap, bool> result = null)
+      {
+         var rnd = new Random(seed);
+         if (threads <= 0) { threads = 1; }
+         var tasks = new Task<CrosswordMap>[threads];
+         CrosswordMap best = null;
+         for (int i = 0; i < threads; i++)
+         {
+            int threadSeed = rnd.Next();
+            tasks[i] = Task.Run(() => Build(threadSeed, list, maxIterationsPerThread, result == null ? null : (map) =>
+            {
+               lock (tasks) { if (map.CompareTo(best) > 0) { best = map; return result(best); } }
+               return false;
+            }));
+         }
+         for (int i = 0; i < threads; i++)
+         {
+            var map = await tasks[i];
+            if (map != null) { if (map.CompareTo(best) > 0) { best = map; } }
          }
          return best;
       }

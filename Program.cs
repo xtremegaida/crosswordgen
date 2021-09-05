@@ -24,7 +24,12 @@ namespace Crossword
             if (string.IsNullOrWhiteSpace(line)) { continue; }
             words.Add(line.Trim().Replace(" ", "").ToUpper());
          }
-         var map = CrosswordMap.Build(1, words.Distinct().ToArray());
+         var map = CrosswordMap.BuildAsync(1, words.Distinct().ToArray(), 10000, 8, (result) =>
+         {
+            Console.WriteLine("Result found - all intersecting: {0}, intersections: {1}, area: {2}",
+               result.AllIntersecting, result.Intersections, result.X * result.Y);
+            return false;
+         }).Result;
          if (map == null) { throw new InvalidOperationException("Cannot build after many tries."); }
          var xlsx = CrosswordExport.Export(map);
          File.WriteAllBytes(args.Length > 1 ? args[1] : "output.xlsx", xlsx);
