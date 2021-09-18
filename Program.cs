@@ -9,7 +9,7 @@ namespace Crossword
    {
       static void Main(string[] args)
       {
-         //args = new string[] { "input.txt" };
+        // args = new string[] { "input.txt" };
          if (args.Length == 0)
          {
             Console.WriteLine("Crossword <input_file> [output_file]");
