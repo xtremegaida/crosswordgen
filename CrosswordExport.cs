@@ -55,8 +55,8 @@ namespace Crossword
          for (int i = list.Count - 1; i > 0; i--)
          {
             int j = rnd.Next(i + 1);
-            var s = list[0];
-            list[0] = list[j];
+            var s = list[i];
+            list[i] = list[j];
             list[j] = s;
          }
          letters = string.Join("", list);
